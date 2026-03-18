@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Scratch notes
+scratch/*
+!scratch/.gitkeep
+
+# Agent-oriented project context
+AGENTS.md
+memory/
+prompts/
+tasks/
+specs/
+scratch/

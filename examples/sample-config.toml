@@ -1,0 +1,30 @@
+[[presets]]
+name = "dev"
+window_name = "editor"
+cmd = "vim"
+working_dir = "/tmp"
+
+[[presets]]
+name = "stack"
+window_name = "services"
+cmd = "sh"
+working_dir = "~"
+
+[presets.layout]
+split = "vertical"
+percentage = 80
+
+[[presets.layout.children]]
+cmd = "top"
+working_dir = "~"
+
+[[presets.layout.children]]
+split = "horizontal"
+percentage = 60
+
+[[presets.layout.children.children]]
+cmd = "ls"
+working_dir = "~"
+
+[[presets.layout.children.children]]
+cmd = "sh"
