@@ -28,6 +28,12 @@ Clone this repository and install dependencies:
 uv sync
 ```
 
+For convenient integration, I recommend adding a shortcut to your `tmux.conf` to launch the preset selector:
+
+```
+bind-key -n C-n run-shell 'uv --directory /path/to/tmux-launcher run tmux-launcher'
+```
+
 ## Quick Start
 
 Run the provided sample config (inside `tmux`):
