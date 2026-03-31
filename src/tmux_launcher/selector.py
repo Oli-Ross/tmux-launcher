@@ -92,6 +92,8 @@ def _preview_path(path: object) -> str:
 def _preview_cmd(command: str | None) -> str:
     if command is None:
         return "(layout)"
+    if command == "":
+        return "(none)"
     normalized = _single_line(command)
     if len(normalized) <= 20:
         return normalized

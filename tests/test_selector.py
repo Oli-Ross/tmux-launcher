@@ -38,6 +38,14 @@ def test_build_fzf_input_contains_relevant_preset_columns() -> None:
     )
 
 
+def test_build_fzf_input_shows_blank_command_as_none() -> None:
+    presets = [
+        Preset(name="blank", window_name="blank", cmd="", working_dir=Path("/tmp")),
+    ]
+
+    assert build_fzf_input(presets) == "blank\tblank\t/tmp\t(none)\tsingle\n"
+
+
 def test_build_fzf_command_uses_preview_window() -> None:
     command = build_fzf_command()
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -15,14 +16,13 @@ if TYPE_CHECKING:
 
 
 class PaneLike(Protocol):
-    def send_keys(self, cmd: str) -> None: ...
-
     def split(
         self,
         *,
         attach: bool,
         direction: object,
         start_directory: Path,
+        shell: str | None = None,
     ) -> "PaneLike": ...
 
     def resize(self, *, height: str | None = None, width: str | None = None) -> "PaneLike": ...
@@ -45,6 +45,7 @@ class SessionLike(Protocol):
         window_name: str,
         start_directory: Path,
         attach: bool,
+        window_shell: str | None = None,
     ) -> WindowLike: ...
 
 
@@ -96,40 +97,43 @@ def spawn_preset(session: SessionLike, preset: Preset) -> WindowLike:
         window_name=preset.window_name,
         start_directory=_pane_start_directory(preset.layout, preset),
         attach=True,
+        window_shell=_pane_shell_command(preset.layout, preset),
     )
-    _spawn_node(_require_active_pane(window), preset.layout, preset)
+    _spawn_node(_require_active_pane(window), preset.layout, preset, pane_initialized=True)
     return window
 
 
-def _spawn_node(pane: PaneLike, node: PaneNode, preset: Preset) -> None:
+def _spawn_node(pane: PaneLike, node: PaneNode, preset: Preset, *, pane_initialized: bool) -> None:
     if isinstance(node, PaneLeaf):
-        _configure_pane(pane, node, preset)
         return
 
     anchor, *siblings = node.children
-    _spawn_node(pane, anchor, preset)
+    _spawn_node(pane, anchor, preset, pane_initialized=pane_initialized)
     for sibling in siblings:
         sibling_pane = pane.split(
             attach=False,
             direction=_pane_direction(node),
             start_directory=_pane_start_directory(sibling, preset),
+            shell=_pane_shell_command(sibling, preset),
         )
         _apply_split_percentage(sibling_pane, node)
-        _spawn_node(sibling_pane, sibling, preset)
+        _spawn_node(sibling_pane, sibling, preset, pane_initialized=True)
 
 
-def _configure_pane(pane: PaneLike, leaf: PaneLeaf, preset: Preset) -> None:
-    command = _pane_command(leaf, preset)
-    if command:
-        pane.send_keys(command)
-
-
-def _pane_command(node: PaneNode, preset: Preset) -> str:
-    if isinstance(node, PaneLeaf) and node.cmd is not None:
-        return node.cmd
-    if preset.cmd is not None:
+def _pane_command(node: PaneNode, preset: Preset) -> str | None:
+    if isinstance(node, PaneLeaf):
+        if node.cmd is not None:
+            return node.cmd
         return preset.cmd
-    raise RuntimeError(f"preset '{preset.name}' has no command for this pane")
+    return _pane_command(node.children[0], preset)
+
+
+def _pane_shell_command(node: PaneNode, preset: Preset) -> str | None:
+    command = _pane_command(node, preset)
+    if command in {None, ""}:
+        return None
+    quoted_command = shlex.quote(command)
+    return f'"${{SHELL:-/bin/sh}}" -lc {quoted_command}; exec "${{SHELL:-/bin/sh}}" -i'
 
 
 def _pane_working_dir(node: PaneNode, preset: Preset) -> Path:

@@ -20,9 +20,10 @@ Required fields:
 - `working_dir`: default working directory
 
 Command rules:
-- `cmd` is required for single-pane presets
+- `cmd` is required for single-pane presets unless you intentionally set it to `""` to start with no command
 - `cmd` is optional for split layouts if every pane leaf defines its own `cmd`
 - when present, `cmd` acts as the default command inherited by pane leaves
+- `cmd = ""` is allowed on presets or pane leaves and means "start an idle shell in this pane"
 
 ## Layouts
 
@@ -116,7 +117,9 @@ cmd = "sh"
 
 Environment note:
 - `working_dir` values should point to directories that exist on the machine where you run the CLI.
-- `cmd` values are executed as-is inside tmux. The tool does not manage `PATH`, install dependencies, or adapt commands to your shell setup.
+- non-empty `cmd` values are launched by tmux when the pane/window is created, then control returns to an interactive shell in that pane after the command exits.
+- `cmd = ""` starts the pane without running any initial command.
+- The tool does not manage `PATH`, install dependencies, or adapt commands to your shell setup.
 
 ## Launch Behavior
 

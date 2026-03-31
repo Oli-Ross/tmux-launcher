@@ -141,6 +141,53 @@ def test_parse_config_allows_missing_preset_cmd_when_layout_leaves_define_comman
     assert config.presets[0].cmd is None
 
 
+def test_parse_config_allows_blank_preset_cmd_for_single_pane() -> None:
+    raw = tomllib.loads(
+        textwrap.dedent(
+            """
+            [[presets]]
+            name = "blank"
+            window_name = "blank"
+            cmd = ""
+            working_dir = "/tmp"
+            """
+        )
+    )
+
+    config = parse_config(raw)
+
+    assert config.presets[0].cmd == ""
+
+
+def test_parse_config_allows_blank_leaf_cmd() -> None:
+    raw = tomllib.loads(
+        textwrap.dedent(
+            """
+            [[presets]]
+            name = "blank"
+            window_name = "blank"
+            working_dir = "/tmp"
+
+            [presets.layout]
+            split = "horizontal"
+            percentage = 50
+
+            [[presets.layout.children]]
+            cmd = ""
+
+            [[presets.layout.children]]
+            cmd = "htop"
+            """
+        )
+    )
+
+    config = parse_config(raw)
+    layout = config.presets[0].layout
+
+    assert isinstance(layout, PaneGroup)
+    assert layout.children[0] == PaneLeaf(cmd="", working_dir=None)
+
+
 def test_parse_config_rejects_invalid_split_value() -> None:
     raw = tomllib.loads(
         textwrap.dedent(
