@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
 
 
 class PaneLike(Protocol):
+    def cmd(self, cmd: str, *args: object, target: str | int | None = None) -> object: ...
+
     def split(
         self,
         *,
@@ -31,6 +34,8 @@ class PaneLike(Protocol):
 class WindowLike(Protocol):
     @property
     def active_pane(self) -> PaneLike | None: ...
+
+    def select(self) -> "WindowLike": ...
 
 
 class SessionLike(Protocol):
@@ -96,44 +101,60 @@ def spawn_preset(session: SessionLike, preset: Preset) -> WindowLike:
     window = session.new_window(
         window_name=preset.window_name,
         start_directory=_pane_start_directory(preset.layout, preset),
-        attach=True,
-        window_shell=_pane_shell_command(preset.layout, preset),
+        attach=False,
     )
-    _spawn_node(_require_active_pane(window), preset.layout, preset, pane_initialized=True)
+    leaves = _spawn_node(_require_active_pane(window), preset.layout, preset)
+    for pane, leaf in leaves:
+        _start_pane_command(pane, leaf, preset)
+    window.select()
     return window
 
 
-def _spawn_node(pane: PaneLike, node: PaneNode, preset: Preset, *, pane_initialized: bool) -> None:
+def _spawn_node(pane: PaneLike, node: PaneNode, preset: Preset) -> list[tuple[PaneLike, PaneLeaf]]:
     if isinstance(node, PaneLeaf):
-        return
+        return [(pane, node)]
 
     anchor, *siblings = node.children
-    _spawn_node(pane, anchor, preset, pane_initialized=pane_initialized)
+    leaves = _spawn_node(pane, anchor, preset)
     for sibling in siblings:
         sibling_pane = pane.split(
             attach=False,
             direction=_pane_direction(node),
             start_directory=_pane_start_directory(sibling, preset),
-            shell=_pane_shell_command(sibling, preset),
         )
         _apply_split_percentage(sibling_pane, node)
-        _spawn_node(sibling_pane, sibling, preset, pane_initialized=True)
+        leaves.extend(_spawn_node(sibling_pane, sibling, preset))
+    return leaves
 
 
-def _pane_command(node: PaneNode, preset: Preset) -> str | None:
-    if isinstance(node, PaneLeaf):
-        if node.cmd is not None:
-            return node.cmd
-        return preset.cmd
-    return _pane_command(node.children[0], preset)
+def _start_pane_command(pane: PaneLike, leaf: PaneLeaf, preset: Preset) -> None:
+    shell_command = _pane_shell_command(_pane_command(leaf, preset))
+    if shell_command is None:
+        return
+
+    result = pane.cmd(
+        "respawn-pane",
+        "-k",
+        f"-c{_pane_working_dir(leaf, preset)}",
+        shell_command,
+    )
+    stderr = getattr(result, "stderr", "")
+    if stderr:
+        raise RuntimeError(str(stderr).strip() or "failed to respawn tmux pane")
 
 
-def _pane_shell_command(node: PaneNode, preset: Preset) -> str | None:
-    command = _pane_command(node, preset)
+def _pane_command(leaf: PaneLeaf, preset: Preset) -> str | None:
+    if leaf.cmd is not None:
+        return leaf.cmd
+    return preset.cmd
+
+
+def _pane_shell_command(command: str | None) -> str | None:
     if command in {None, ""}:
         return None
+    quoted_python = shlex.quote(sys.executable)
     quoted_command = shlex.quote(command)
-    return f'"${{SHELL:-/bin/sh}}" -lc {quoted_command}; exec "${{SHELL:-/bin/sh}}" -i'
+    return f"{quoted_python} -m tmux_launcher.pane_bootstrap -- {quoted_command}"
 
 
 def _pane_working_dir(node: PaneNode, preset: Preset) -> Path:

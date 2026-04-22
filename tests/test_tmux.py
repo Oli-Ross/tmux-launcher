@@ -5,6 +5,7 @@ from typing import cast
 
 from libtmux.pane import PaneDirection
 
+from tmux_launcher import tmux
 from tmux_launcher.config import PaneGroup, PaneLeaf, Preset
 from tmux_launcher.tmux import (
     ServerLike,
@@ -19,9 +20,14 @@ from tmux_launcher.tmux import (
 class FakePane:
     def __init__(self, name: str) -> None:
         self.name = name
+        self.cmd_calls: list[dict[str, object]] = []
         self.split_calls: list[dict[str, object]] = []
         self.resize_calls: list[dict[str, object]] = []
         self.children: list[FakePane] = []
+
+    def cmd(self, cmd: str, *args: object, target: str | int | None = None) -> "FakeCommandResult":
+        self.cmd_calls.append({"cmd": cmd, "args": args, "target": target})
+        return FakeCommandResult()
 
     def split(
         self,
@@ -52,6 +58,16 @@ class FakePane:
 class FakeWindow:
     def __init__(self) -> None:
         self.active_pane = FakePane("root")
+        self.select_calls = 0
+
+    def select(self) -> "FakeWindow":
+        self.select_calls += 1
+        return self
+
+
+class FakeCommandResult:
+    def __init__(self, stderr: str = "") -> None:
+        self.stderr = stderr
 
 
 class FakeSession:
@@ -115,8 +131,20 @@ def test_spawn_preset_creates_window_and_runs_default_pane_command() -> None:
         {
             "window_name": "editor",
             "start_directory": Path("/tmp/project with spaces"),
-            "attach": True,
-            "window_shell": '"${SHELL:-/bin/sh}" -lc nvim; exec "${SHELL:-/bin/sh}" -i',
+            "attach": False,
+            "window_shell": None,
+        }
+    ]
+    assert session.windows[0].select_calls == 1
+    assert session.windows[0].active_pane.cmd_calls == [
+        {
+            "cmd": "respawn-pane",
+            "args": (
+                "-k",
+                "-c/tmp/project with spaces",
+                tmux._pane_shell_command("nvim"),
+            ),
+            "target": None,
         }
     ]
 
@@ -148,6 +176,17 @@ def test_spawn_preset_materializes_nested_layout() -> None:
     spawn_preset(cast(SessionLike, session), preset)
 
     root_pane = session.windows[0].active_pane
+    assert root_pane.cmd_calls == [
+        {
+            "cmd": "respawn-pane",
+            "args": (
+                "-k",
+                "-c/workspace/app",
+                tmux._pane_shell_command("run-app"),
+            ),
+            "target": None,
+        }
+    ]
     assert len(root_pane.split_calls) == 1
 
     nested_group_pane = cast(FakePane, root_pane.split_calls[0]["pane"])
@@ -155,15 +194,37 @@ def test_spawn_preset_materializes_nested_layout() -> None:
         "attach": False,
         "direction": PaneDirection.Below,
         "start_directory": Path("/var/log/app"),
-        "shell": '"${SHELL:-/bin/sh}" -lc \'tail -f app.log\'; exec "${SHELL:-/bin/sh}" -i',
+        "shell": None,
         "pane": nested_group_pane,
     }
     assert nested_group_pane.resize_calls == [{"height": "20%", "width": None}]
+    assert nested_group_pane.cmd_calls == [
+        {
+            "cmd": "respawn-pane",
+            "args": (
+                "-k",
+                "-c/var/log/app",
+                tmux._pane_shell_command("tail -f app.log"),
+            ),
+            "target": None,
+        }
+    ]
     assert len(nested_group_pane.split_calls) == 1
     assert nested_group_pane.split_calls[0]["direction"] == PaneDirection.Right
     assert nested_group_pane.split_calls[0]["start_directory"] == Path("/workspace/app")
-    assert nested_group_pane.split_calls[0]["shell"] == '"${SHELL:-/bin/sh}" -lc \'pytest -q\'; exec "${SHELL:-/bin/sh}" -i'
+    assert nested_group_pane.split_calls[0]["shell"] is None
     second_nested_leaf = cast(FakePane, nested_group_pane.split_calls[0]["pane"])
+    assert second_nested_leaf.cmd_calls == [
+        {
+            "cmd": "respawn-pane",
+            "args": (
+                "-k",
+                "-c/workspace/app",
+                tmux._pane_shell_command("pytest -q"),
+            ),
+            "target": None,
+        }
+    ]
     assert second_nested_leaf.resize_calls == [{"height": None, "width": "40%"}]
 
 
@@ -182,10 +243,12 @@ def test_spawn_preset_allows_blank_command() -> None:
         {
             "window_name": "blank",
             "start_directory": Path("/workspace/app"),
-            "attach": True,
+            "attach": False,
             "window_shell": None,
         }
     ]
+    assert session.windows[0].select_calls == 1
+    assert session.windows[0].active_pane.cmd_calls == []
 
 
 def test_spawn_presets_creates_one_window_per_preset() -> None:

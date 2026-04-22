@@ -117,7 +117,7 @@ cmd = "sh"
 
 Environment note:
 - `working_dir` values should point to directories that exist on the machine where you run the CLI.
-- non-empty `cmd` values are launched by tmux when the pane/window is created, then control returns to an interactive shell in that pane after the command exits.
+- non-empty `cmd` values are started after the pane layout is created, then control returns to an interactive shell in that pane after the command exits.
 - `cmd = ""` starts the pane without running any initial command.
 - The tool does not manage `PATH`, install dependencies, or adapt commands to your shell setup.
 
